@@ -1,5 +1,5 @@
-qpyson (WIP)
-============
+qpyson: Thin Commandline Tool to Explore, Transform, and Munge JSON using Python
+================================================================================
 
 The JSON querying tool, [jq](https://stedolan.github.io/jq/), is a
 really powerful tool. However, it’s sometimes a bit involved and has a
@@ -7,17 +7,17 @@ learning curve that requires digging into the [jq
 manual](https://stedolan.github.io/jq/manual/) and familiarizing
 yourself with a custom language.
 
-`qpyson` is a thin tool to explore, transform, or munge JSON using
-Python as the processing language.
+`qpyson` is a thin commandline tool to explore, transform, or munge JSON
+using Python as the processing language.
 
 Goals
 -----
 
--   Process JSON file using Python
+-   Process (filter, map, general munging) of JSON files using Python
 -   Thin layer to process or apply transforms written in Python
--   Provide the Python func as a string to the commandline or reference
-    an external file where the function is defined
--   Custom functions can be paramaterized and configured from the
+-   Provide Python function as a string to the commandline or define
+    Python functions in an external file
+-   Custom functions can be parameterized and configured from the
     commandline
 -   Output results are emitted as JSON or in tabular form (using
     [tabulate](https://pypi.org/project/tabulate/) for quick viewing
@@ -55,6 +55,39 @@ Example data from the Iris dataset.
       {"sepalLength": 4.6, "sepalWidth": 3.4, "petalLength": 1.4, "petalWidth": 0.3, "species": "setosa"},
       {"sepalLength": 5.0, "sepalWidth": 3.4, "petalLength": 1.5, "petalWidth": 0.2, "species": "setosa"},
       {"sepalLength": 4.4, "sepalWidth": 2.9, "petalLength": 1.4, "petalWidth": 0.2, "species": "setosa"},
+
+The commandline tool takes a function written as commandline string or
+referenced in an external file as well as the JSON file to be processed.
+
+    qpyson --help
+
+    qpyson: error: the following arguments are required: path_or_cmd, json_file
+    usage: qpyson [-f FUNCTION_NAME] [-n] [--indent INDENT] [-t]
+                  [--table-style TABLE_STYLE]
+                  [--log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG,NOTSET}]
+                  [--help]
+                  path_or_cmd json_file
+
+    Util to use Python to process (e.g., filter, map) JSON files
+
+    positional arguments:
+      path_or_cmd           Path to python file, or python cmd
+      json_file             Path to JSON file
+
+    optional arguments:
+      -f FUNCTION_NAME, --function-name FUNCTION_NAME
+                            Function name (default: f)
+      -n, --no-pretty       (Non-table) Pretty print the output of dicts and list
+                            of dicts (default: False)
+      --indent INDENT       (Non-table) Pretty print indent spacing (default: 2)
+      -t, --print-table     Pretty print results (default: False)
+      --table-style TABLE_STYLE
+                            Table fmt style using Tabulate. See
+                            https://github.com/astanin/python-tabulate#table-
+                            format for available options (default: simple)
+      --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG,NOTSET}
+                            Log level (default: NOTSET)
+      --help                Show this help message and exit (default: False)
 
 We can define a custom function to process the JSON dataset. By default
 the function is named `f` and can be customized by `-f` or
@@ -127,9 +160,9 @@ Executing `--help` will show the output options.
     optional arguments:
       -f FUNCTION_NAME, --function-name FUNCTION_NAME
                             Function name (default: f)
-      -n, --no-pretty       Non-table Pretty print the output of dicts and list of
-                            dicts (default: False)
-      --indent INDENT       Non-table Pretty print indent spacing (default: 2)
+      -n, --no-pretty       (Non-table) Pretty print the output of dicts and list
+                            of dicts (default: False)
+      --indent INDENT       (Non-table) Pretty print indent spacing (default: 2)
       -t, --print-table     Pretty print results (default: False)
       --table-style TABLE_STYLE
                             Table fmt style using Tabulate. See
@@ -219,9 +252,9 @@ And calling `--help` will show the custom function specific arguments
     optional arguments:
       -f FUNCTION_NAME, --function-name FUNCTION_NAME
                             Function name (default: f)
-      -n, --no-pretty       Non-table Pretty print the output of dicts and list of
-                            dicts (default: False)
-      --indent INDENT       Non-table Pretty print indent spacing (default: 2)
+      -n, --no-pretty       (Non-table) Pretty print the output of dicts and list
+                            of dicts (default: False)
+      --indent INDENT       (Non-table) Pretty print indent spacing (default: 2)
       -t, --print-table     Pretty print results (default: False)
       --table-style TABLE_STYLE
                             Table fmt style using Tabulate. See
@@ -310,9 +343,9 @@ Running `--help` will show the supported configuration options.
     optional arguments:
       -f FUNCTION_NAME, --function-name FUNCTION_NAME
                             Function name (default: f)
-      -n, --no-pretty       Non-table Pretty print the output of dicts and list of
-                            dicts (default: False)
-      --indent INDENT       Non-table Pretty print indent spacing (default: 2)
+      -n, --no-pretty       (Non-table) Pretty print the output of dicts and list
+                            of dicts (default: False)
+      --indent INDENT       (Non-table) Pretty print indent spacing (default: 2)
       -t, --print-table     Pretty print results (default: False)
       --table-style TABLE_STYLE
                             Table fmt style using Tabulate. See

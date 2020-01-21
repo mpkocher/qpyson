@@ -12,18 +12,18 @@ use_python("/Users/mkocher/miniconda3/envs/core/bin/python")
 use_condaenv("core", required = TRUE,  conda = "/Users/mkocher/miniconda3/bin/conda")
 ```
 
-# qpyson (WIP)
+# qpyson: Thin Commandline Tool to Explore, Transform, and Munge JSON using Python
 
 The JSON querying tool, [jq](https://stedolan.github.io/jq/), is a really powerful tool. However, it's sometimes a bit involved and has a learning curve that requires digging into the [jq manual](https://stedolan.github.io/jq/manual/) and familiarizing yourself with a custom language.
 
-`qpyson` is a thin tool to explore, transform, or munge JSON using Python as the processing language. 
+`qpyson` is a thin commandline tool to explore, transform, or munge JSON using Python as the processing language. 
 
 ## Goals
 
-- Process JSON file using Python
-- Thin layer to process or apply transforms written in Python
-- Provide the Python func as a string to the commandline or reference an external file where the function is defined
-- Custom functions can be paramaterized and configured from the commandline
+- Process (filter, map, general munging) of JSON files using Python
+- Thin layer to process or apply transforms written in Python 
+- Provide Python function as a string to the commandline or define Python functions in an external file
+- Custom functions can be parameterized and configured from the commandline
 - Output results are emitted as JSON or in tabular form (using [tabulate](https://pypi.org/project/tabulate/) for quick viewing from the commandline 
 
 
@@ -48,6 +48,13 @@ Example data from the Iris dataset.
 ```{bash, comment=NA}
 head examples/iris.json
 ```
+
+The commandline tool takes a function written as commandline string or referenced in an external file as well as the JSON file to be processed. 
+
+```{bash, comment=NA, error=TRUE}
+qpyson --help
+```
+
 
 We can define a custom function to process the JSON dataset. By default the function is named `f` and can be customized by `-f` or `--function-name` commandline argument.
 
