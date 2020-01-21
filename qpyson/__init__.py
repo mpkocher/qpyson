@@ -7,8 +7,8 @@ import os
 import os.path
 import sys
 import tempfile
+import traceback
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from argparse import _HelpAction as HelpAction
 from gettext import gettext
 from inspect import Parameter
 from typing import Callable, List, NoReturn, Optional, Text, Any
@@ -67,6 +67,13 @@ def _add_core_options(p: CustomParser):
     f("json_file", type=_validate_file_exists, help="Path to JSON file")
     f("-f", "--function-name", type=str, help="Function name", default="f")
     f(
+        "-n",
+        "--no-pretty",
+        action="store_true",
+        help="(Non-table) Pretty print the output of dicts and list of dicts",
+    )
+    f("--indent", type=int, default=2, help="(Non-table) Pretty print indent spacing")
+    f(
         "-t",
         "--print-table",
         action="store_true",
@@ -80,10 +87,20 @@ def _add_core_options(p: CustomParser):
         default="simple",
     )
 
-    f('--log-level', help="Log level", default='NOTSET', choices=list(logging._levelToName.values()))
+    f(
+        "--log-level",
+        help="Log level",
+        default="NOTSET",
+        choices=list(logging._levelToName.values()),
+    )
     # There's a bit of messy munging of the input, so we're going store the state and let the
     # caller explicitly handle this
-    f("--help", action='store_true', help="Show this help message and exit", default=False)
+    f(
+        "--help",
+        action="store_true",
+        help="Show this help message and exit",
+        default=False,
+    )
     return p
 
 
@@ -113,7 +130,9 @@ def load_func_from_file(path, func_name) -> Callable:
     if func_name in lx:
         return lx[func_name]
     else:
-        raise KeyError(f"Unable to find func `{func_name}`. Found functions {','.join(loaded_func_names)}")
+        raise KeyError(
+            f"Unable to find func `{func_name}`. Found functions {','.join(loaded_func_names)}"
+        )
 
 
 def load_func_from_str_or_path(path_or_cmd: str, func_name: str = "f") -> Callable:
@@ -148,7 +167,9 @@ def get_func_parameters(func: Callable) -> List[Parameter]:
         return [parameter for _, parameter in items[1:]]
 
 
-def to_func_parameter_to_argparse_option(name, type_, default_value:Optional[Any], help=None):
+def to_func_parameter_to_argparse_option(
+    name, type_, default_value: Optional[Any], help=None
+):
 
     prefix = "--"
     arg_id = "".join([prefix, name])
@@ -172,17 +193,13 @@ def parse_raw_args(argv, core_parser):
     """
     log.debug(f"Parsing raw argv = {argv}")
 
-    # what does this raise?
     pargs, _ = core_parser.parse_known_args(argv)
 
     cmd_or_path = pargs.path_or_cmd
     func_name = pargs.function_name
 
-    to_raise_help:bool = pargs.help
-
     transform_func = load_func_from_str_or_path(cmd_or_path, func_name=func_name)
 
-    # get args from func and build parser
     transform_func_parameters = get_func_parameters(transform_func)
     option_funcs = [_add_core_options]
 
@@ -195,19 +212,23 @@ def parse_raw_args(argv, core_parser):
 
     p = to_parser(option_funcs)
 
-    return p, transform_func_parameters, to_raise_help
+    return p, transform_func_parameters
 
 
-def printer_basic(dx):
-    if isinstance(dx, dict):
-        print(json.dumps(dx))
-    elif isinstance(dx, str):
-        print(dx)
-    elif isinstance(dx, list):
-        # dict, primitive
-        print(json.dumps(dx))
-    else:
-        print(dx)
+def to_printer_basic(indent=None):
+    def jprinter(x):
+        i = -1 if indent is None else indent
+        print(json.dumps(x, indent=i))
+
+    def printer_basic(dx):
+        if isinstance(dx, (dict, list)):
+            jprinter(dx)
+        else:
+            # this is mostly for raw strings
+            # returned from
+            print(dx)
+
+    return printer_basic
 
 
 def to_printer_table(table_fmt="simple"):
@@ -231,8 +252,8 @@ def run_main(
     json_path: str,
     path_or_cmd: str,
     func_name: str,
+    printer,
     custom_parameters: Optional[dict] = None,
-    printer=printer_basic,
 ) -> int:
 
     f = load_func_from_str_or_path(path_or_cmd, func_name)
@@ -259,13 +280,15 @@ def runner(argv) -> int:
         return core_parser if custom_parser is None else custom_parser
 
     try:
-        custom_parser, transform_func_params, to_raise_help = parse_raw_args(argv, core_parser)
+        custom_parser, transform_func_params = parse_raw_args(argv, core_parser)
         pargs = custom_parser.parse_args(argv)
 
         # Note, there's a delay in setting up the logging
         log_level = logging._nameToLevel[pargs.log_level]
         if log_level != logging.NOTSET:
-            logging.basicConfig(level=log_level, format='%(asctime)s - [%(levelname)s] - %(message)s')
+            logging.basicConfig(
+                level=log_level, format="%(asctime)s - [%(levelname)s] - %(message)s"
+            )
 
         if pargs.help:
             custom_parser.print_help()
@@ -274,15 +297,19 @@ def runner(argv) -> int:
         log.debug(pargs)
         custom_param_keys = {t.name for t in transform_func_params}
         custom_opts = {key: getattr(pargs, key) for key in custom_param_keys}
+        indent_level = None if pargs.no_pretty else pargs.indent
+
         printer_func = (
-            to_printer_table(pargs.table_style) if pargs.print_table else printer_basic
+            to_printer_table(pargs.table_style)
+            if pargs.print_table
+            else to_printer_basic(indent_level)
         )
         return run_main(
             pargs.json_file,
             pargs.path_or_cmd,
             pargs.function_name,
-            custom_parameters=custom_opts,
             printer=printer_func,
+            custom_parameters=custom_opts,
         )
     except ParserException as ex:
         p = to_p()
@@ -290,6 +317,5 @@ def runner(argv) -> int:
         p.print_message(ex.message)
         return ex.exit_code
     except Exception as ex:
-        p = to_p()
-        p.print_message(f"Failed {ex}")
-        return 1
+        traceback.print_exc(ex)
+        return 2

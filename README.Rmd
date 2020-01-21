@@ -14,14 +14,16 @@ use_condaenv("core", required = TRUE,  conda = "/Users/mkocher/miniconda3/bin/co
 
 # qpyson (WIP)
 
-Tool to explore, transform, or munge JSON using Python.  
+The JSON querying tool, [jq](https://stedolan.github.io/jq/), is a really powerful tool. However, it's sometimes a bit involved and has a learning curve that requires digging into the [jq manual](https://stedolan.github.io/jq/manual/) and familiarizing yourself with a custom language.
+
+`qpyson` is a thin tool to explore, transform, or munge JSON using Python as the processing language. 
 
 ## Goals
 
 - Process JSON file using Python
-- Thin layer to process or apply transforms shim to call Python custom funcs
+- Thin layer to process or apply transforms written in Python
 - Provide the Python func as a string to the commandline or reference an external file where the function is defined
-- Custom processing functions can be parameterized and configured from the commandline
+- Custom functions can be paramaterized and configured from the commandline
 - Output results are emitted as JSON or in tabular form (using [tabulate](https://pypi.org/project/tabulate/) for quick viewing from the commandline 
 
 
@@ -33,7 +35,7 @@ Tool to explore, transform, or munge JSON using Python.
 
 ## Installation
 
-Recommend using a virtualenv or conda env to install.
+Recommended to install using a [virtualenv](https://docs.python-guide.org/dev/virtualenvs/) or [conda](https://docs.conda.io/en/latest/) env to install.
 
 ```{bash, eval=FALSE}
 pip install qpyson
@@ -44,70 +46,99 @@ pip install qpyson
 Example data from the Iris dataset.
 
 ```{bash, comment=NA}
-head example-data/iris.json
+head examples/iris.json
 ```
 
 We can define a custom function to process the JSON dataset. By default the function is named `f` and can be customized by `-f` or `--function-name` commandline argument.
 
 ```{bash, comment=NA}
-qpyson "def f(d): return d[0]" example-data/iris.json
+qpyson "def f(d): return d[0]" examples/iris.json
 ```
 
 We can also write custom functions in a Python file. 
 
 ```{bash, comment=NA}
-cat example-data/iris_explore.py
+cat examples/iris_explore.py
 ```
 
 Executing `--help` will show the output options.
 
 ```{bash, comment=NA}
-qpyson example-data/iris_explore.py example-data/iris.json --help
+qpyson examples/iris_explore.py examples/iris.json --help
 ```
 
 Executing function `f`, yields:
 
 ```{bash, comment=NA}
-qpyson example-data/iris_explore.py example-data/iris.json 
+qpyson examples/iris_explore.py examples/iris.json 
 ```
 
 The output view can be changed to a table view using `--print-table` or `-t`.
 
 ```{bash, comment=NA}
-qpyson example-data/iris_explore.py example-data/iris.json --print-table --table-style github
+qpyson examples/iris_explore.py examples/iris.json --print-table --table-style github
 ```
 
 A better example using function `f2` defined in `iris_explore.py`
 
 ```{bash, comment=NA}
-qpyson example-data/iris_explore.py example-data/iris.json  --function-name f2 --print-table
+qpyson examples/iris_explore.py examples/iris.json  --function-name f2 --print-table
 ```
 
 Custom functions can be defined with required or optional values (with defaults) combined with Python 3 type annotations to generate 
 
 ```{bash, comment=NA}
-cat example-data/iris.py
+cat examples/iris.py
 ```
 
 And calling `--help` will show the custom function specific arguments (e.g., `--max_items` and `--sort_direction`)
 
 ```{bash, comment=NA}
-qpyson example-data/iris.py example-data/iris.json --help
+qpyson examples/iris.py examples/iris.json --help
 ```
 
 And calling with custom options yields: 
 
 ```{bash, comment=NA}
-qpyson example-data/iris.py example-data/iris.json -t --max_items=3 --sort_direction=desc --sort_field sepalLength
+qpyson examples/iris.py examples/iris.json -t --max_items=3 --sort_direction=desc --sort_field sepalLength
 ```
 
 Another Example calling pandas underneath the hood to get a quick summary of the data. 
 
 ```{bash, comment=NA}
-qpyson example-data/iris.py example-data/iris.json -t -f g --field=sepalLength
+qpyson examples/iris.py examples/iris.json -t -f g --field=sepalLength
+```
+
+It's also possible to create thin JSON munging tools for configuration of systems or tools that take JSON as input.
+
+For example a JSON configuration template with defaults.
+
+```{bash, comment=NA}
+cat examples/config_template.json
+```
+And a processing function, `f`.
+
+```{bash, comment=NA}
+cat examples/config_processor.py
+```
+Running `--help` will show the supported configuration options. 
+
+```{bash, comment=NA}
+qpyson examples/config_processor.py examples/config_template.json --help
+```
+
+Now configuring `alpha`, `beta` and `gamma`.
+
+```{bash, comment=NA}
+qpyson examples/config_processor.py examples/config_template.json --alpha 1.23 --beta 2.34 --gamma 3.45
 ```
 
 
+# Testing
+
+Testing is currently done using RMarkdown using the make target `doc`. 
+
+This should probably be ported to non-R based approach. However, this current approach does keep the docs (e.g., README.md) up to date. 
 
 # Related JQ-ish tools
 
