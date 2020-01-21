@@ -11,11 +11,11 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from argparse import _HelpAction as HelpAction
 from gettext import gettext
 from inspect import Parameter
-from typing import Callable, List, NoReturn, Optional, Text
+from typing import Callable, List, NoReturn, Optional, Text, Any
 
 import tabulate
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 log = logging.getLogger(__name__)
@@ -23,25 +23,14 @@ log = logging.getLogger(__name__)
 
 def _validate_file_exists(path):
     if not os.path.exists(path):
-        raise ParserException(f"File {path} does not exist")
+        raise IOError(f"File `{path}` does not exist", exit_code=2)
     return path
 
 
 class ParserException(Exception):
-    def __init__(self, message):
+    def __init__(self, message, exit_code=1):
         self.message = message
-
-
-class ShowHelp(Exception):
-    # This might not be the best idea
-    pass
-
-
-class CustomHelpAction(HelpAction):
-    def __call__(self, parser, namespace, values, option_string=None):
-        # Not sure this is a good idea, however this is the fallout from
-        # getting around the sys.exit usage in the core argparse API
-        raise ShowHelp(parser.format_help())
+        self.exit_code = exit_code
 
 
 class CustomParser(ArgumentParser):
@@ -53,7 +42,8 @@ class CustomParser(ArgumentParser):
 
     def exit(self, status: int = 0, message: Optional[Text] = None) -> NoReturn:
         """
-        This semantically changes the interface quite a bit.
+        This fundamentally changes the interface return type. It's now exit code (int)
+        or raise exception.
 
         The error handling must be captured by caller and the caller should
         explicitly return the exit code via a sys.exit call
@@ -62,7 +52,7 @@ class CustomParser(ArgumentParser):
         #     self._print_message(message, sys.stderr)
 
         if status != 0:
-            raise ParserException(message)
+            raise ParserException(message, exit_code=status)
         return status
 
     def error(self, message: Text) -> NoReturn:
@@ -89,7 +79,11 @@ def _add_core_options(p: CustomParser):
         help="Table fmt style using Tabulate. See https://github.com/astanin/python-tabulate#table-format for available options",
         default="simple",
     )
-    f("--help", action=CustomHelpAction, help="Show this help message and exit")
+
+    f('--log-level', help="Log level", default='NOTSET', choices=list(logging._levelToName.values()))
+    # There's a bit of messy munging of the input, so we're going store the state and let the
+    # caller explicitly handle this
+    f("--help", action='store_true', help="Show this help message and exit", default=False)
     return p
 
 
@@ -107,23 +101,31 @@ def get_core_parser() -> CustomParser:
     return to_parser([_add_core_options])
 
 
-def load_from_file(path, func_name) -> Callable:
+def load_func_from_file(path, func_name) -> Callable:
     with codecs.open(path) as __f:
         __code = __f.read().encode("utf-8")
     exec(__code, {}, locals())
-    return locals()[func_name]
+
+    lx = locals()
+    # for better error messages
+    loaded_func_names = list(filter(lambda x: isinstance(lx[x], Callable), lx.keys()))
+
+    if func_name in lx:
+        return lx[func_name]
+    else:
+        raise KeyError(f"Unable to find func `{func_name}`. Found functions {','.join(loaded_func_names)}")
 
 
 def load_func_from_str_or_path(path_or_cmd: str, func_name: str = "f") -> Callable:
 
     try:
         if os.path.exists(path_or_cmd):
-            return load_from_file(path_or_cmd, func_name)
+            return load_func_from_file(path_or_cmd, func_name)
         else:
             with tempfile.NamedTemporaryFile("w", suffix=".py", delete=True) as tmp:
                 with open(tmp.name, "w") as io:
                     io.write(path_or_cmd)
-                result = load_from_file(tmp.name, func_name)
+                result = load_func_from_file(tmp.name, func_name)
             return result
     except Exception as ex:
         raise ValueError(f"Expected path or cmd for `{path_or_cmd}`\n{ex}")
@@ -131,12 +133,14 @@ def load_func_from_str_or_path(path_or_cmd: str, func_name: str = "f") -> Callab
 
 def get_func_parameters(func: Callable) -> List[Parameter]:
     sig = inspect.signature(func)
-    # the func should at least take one argument
+
+    # the func should at least take one argument of the raw
+    # contents of the JSON file
     items = list(sig.parameters.items())
 
     if len(items) < 1:
         raise ValueError(
-            f"Function {func} should take atleast one argument Signature:{items}"
+            f"Function {func} should take at least one argument Signature:{items}"
         )
     if len(items) == 1:
         return []
@@ -144,39 +148,19 @@ def get_func_parameters(func: Callable) -> List[Parameter]:
         return [parameter for _, parameter in items[1:]]
 
 
-def to_func_parameter_to_argparse_option(name, type_, default):
+def to_func_parameter_to_argparse_option(name, type_, default_value:Optional[Any], help=None):
 
     prefix = "--"
     arg_id = "".join([prefix, name])
 
     def wrapper(p: CustomParser) -> CustomParser:
-        if default is None:
-            p.add_argument(arg_id, type=type_)
+        if default_value is None:
+            p.add_argument(arg_id, type=type_, help=help)
         else:
-            p.add_argument(arg_id, type=type_, default=default)
+            p.add_argument(arg_id, type=type_, default=default_value, help=help)
         return p
 
     return wrapper
-
-
-def _find_argument(short_name, long_name, argv):
-    len_argv = len(argv)
-
-    def is_arg(v):
-        return any(v == name for name in (short_name, long_name))
-
-    for i, value in enumerate(argv):
-        if is_arg(value) and (i + 1) <= len_argv:
-            return argv[i + 1]
-
-    return None
-
-
-def _find_argument_or_raise(short_name, long_name, argv):
-    result = _find_argument(short_name, long_name, argv)
-    if result is None:
-        raise ValueError(f"Unable to find ({short_name} or {long_name}) in {argv}")
-    return result
 
 
 def parse_raw_args(argv, core_parser):
@@ -187,30 +171,31 @@ def parse_raw_args(argv, core_parser):
     This makes getting the help a bit tricky
     """
     log.debug(f"Parsing raw argv = {argv}")
-    # this needs to check for --help
-    if len(argv) < 2:
-        # this will raise
-        core_parser.parse_args(argv)
 
-    cmd_or_path = argv[0]
-    # json_file = argv[1]
+    # what does this raise?
+    pargs, _ = core_parser.parse_known_args(argv)
 
-    function_name = _find_argument("-f", "--function-name", argv) or "f"
-    transform_func = load_func_from_str_or_path(cmd_or_path, func_name=function_name)
+    cmd_or_path = pargs.path_or_cmd
+    func_name = pargs.function_name
+
+    to_raise_help:bool = pargs.help
+
+    transform_func = load_func_from_str_or_path(cmd_or_path, func_name=func_name)
 
     # get args from func and build parser
     transform_func_parameters = get_func_parameters(transform_func)
     option_funcs = [_add_core_options]
 
     for parameter in transform_func_parameters:
+        help_msg = f"{parameter.name} type:{parameter.annotation} from custom func `{func_name}`"
         to_opt = to_func_parameter_to_argparse_option(
-            parameter.name, parameter.annotation, parameter.default
+            parameter.name, parameter.annotation, parameter.default, help=help_msg
         )
         option_funcs.append(to_opt)
 
     p = to_parser(option_funcs)
 
-    return p, transform_func_parameters
+    return p, transform_func_parameters, to_raise_help
 
 
 def printer_basic(dx):
@@ -266,13 +251,26 @@ def run_main(
 
 
 def runner(argv) -> int:
-    # logging.basicConfig(stream=sys.stdout, level="DEBUG")
 
     core_parser = get_core_parser()
-    parser, transform_func_params = parse_raw_args(argv, core_parser)
+    custom_parser = None
+
+    def to_p():
+        return core_parser if custom_parser is None else custom_parser
 
     try:
-        pargs = parser.parse_args(argv)
+        custom_parser, transform_func_params, to_raise_help = parse_raw_args(argv, core_parser)
+        pargs = custom_parser.parse_args(argv)
+
+        # Note, there's a delay in setting up the logging
+        log_level = logging._nameToLevel[pargs.log_level]
+        if log_level != logging.NOTSET:
+            logging.basicConfig(level=log_level, format='%(asctime)s - [%(levelname)s] - %(message)s')
+
+        if pargs.help:
+            custom_parser.print_help()
+            return 0
+
         log.debug(pargs)
         custom_param_keys = {t.name for t in transform_func_params}
         custom_opts = {key: getattr(pargs, key) for key in custom_param_keys}
@@ -286,13 +284,12 @@ def runner(argv) -> int:
             custom_parameters=custom_opts,
             printer=printer_func,
         )
-    except ShowHelp:
-        parser.print_help()
-        return 0
     except ParserException as ex:
-        parser.print_help()
-        parser.print_message(ex.message)
-        return 1
+        p = to_p()
+        p.print_help()
+        p.print_message(ex.message)
+        return ex.exit_code
     except Exception as ex:
-        parser.print_message(f"Failed {ex}")
+        p = to_p()
+        p.print_message(f"Failed {ex}")
         return 1
